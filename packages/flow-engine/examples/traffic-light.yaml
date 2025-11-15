@@ -1,0 +1,20 @@
+# Simple Traffic Light Example
+
+id: traffic-light
+initial: red
+
+states:
+  red:
+    entry: "context.duration = 30"
+    on:
+      timer: green
+
+  green:
+    entry: "context.duration = 20"
+    on:
+      timer: yellow
+
+  yellow:
+    entry: "context.duration = 5"
+    on:
+      timer: red

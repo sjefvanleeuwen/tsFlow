@@ -1,0 +1,10 @@
+# Exclude everything by default
+*
+
+# Include only distribution files
+!dist/**
+!README.md
+!LICENSE
+
+# Ensure type definitions are included
+!dist/**/*.d.ts

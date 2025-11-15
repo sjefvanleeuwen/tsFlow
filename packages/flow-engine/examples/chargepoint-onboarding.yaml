@@ -1,0 +1,459 @@
+# ============================================================================
+# CHARGEPOINT ONBOARDING FLOW (Parent Flow)
+# ============================================================================
+#
+# This is the main onboarding flow that orchestrates:
+# 1. Order validation
+# 2. Installation company selection (sub-flow)
+# 3. Chargepoint installation (sub-flow)
+#
+# The installation flow (chargepoint-installation.yaml) is started as a
+# sub-flow from the 'installing' state.
+#
+# Context Schema:
+# - orderId: string
+# - customerId: string
+# - chargepointModel: string
+# - quantity: number
+# - totalPrice: number
+# - installationRequired: boolean
+# - selectedInstaller: { companyId, companyName, rating, certifications }
+# - installationFlowId: string (reference to sub-flow)
+# ============================================================================
+
+id: chargepoint-onboarding
+version: "1.0.0"
+description: Complete customer onboarding workflow for chargepoint orders
+
+initial: order_received
+
+states:
+  # ==========================================================================
+  # 1. ORDER PROCESSING
+  # ==========================================================================
+  order_received:
+    name: order_received
+    description: New order has been received from customer
+    onEntry:
+      - action: log
+        params:
+          message: "📦 Order received: {{orderId}}"
+      - action: log
+        params:
+          message: "   Customer: {{customerId}}"
+      - action: log
+        params:
+          message: "   Model: {{chargepointModel}}"
+      - action: log
+        params:
+          message: "   Quantity: {{quantity}}"
+      - action: log
+        params:
+          message: "   Total Price: €{{totalPrice}}"
+      - action: sendNotification
+        params:
+          recipient: "{{customerId}}"
+          type: "order_confirmation"
+          data:
+            orderId: "{{orderId}}"
+            expectedDelivery: "{{estimatedDelivery}}"
+    transitions:
+      - event: VALIDATE_ORDER
+        to: validating_order
+
+  validating_order:
+    name: validating_order
+    description: Validate order details, inventory, and customer information
+    onEntry:
+      - action: log
+        params:
+          message: "🔍 Validating order..."
+      - action: validate
+        params:
+          field: chargepointModel
+          condition: notEmpty
+          errorMessage: "Chargepoint model is required"
+      - action: validate
+        params:
+          field: quantity
+          condition: greaterThan
+          value: 0
+          errorMessage: "Quantity must be greater than 0"
+      - action: checkInventory
+        params:
+          model: "{{chargepointModel}}"
+          quantity: "{{quantity}}"
+      - action: verifyCustomer
+        params:
+          customerId: "{{customerId}}"
+      - action: validateAddress
+        params:
+          address: "{{shippingAddress}}"
+      - action: log
+        params:
+          message: "   ✅ Order validation passed"
+    transitions:
+      - event: ORDER_VALID
+        to: selecting_installer
+        condition: "{{installationRequired}} === true"
+        description: Installation required, proceed to installer selection
+      - event: ORDER_VALID
+        to: processing_delivery
+        condition: "{{installationRequired}} === false"
+        description: Installation not required, proceed to delivery
+
+  # ==========================================================================
+  # 2. INSTALLATION COMPANY SELECTION (Could be a sub-flow)
+  # ==========================================================================
+  selecting_installer:
+    name: selecting_installer
+    description: Find and select certified installation company
+    onEntry:
+      - action: log
+        params:
+          message: "🔍 Searching for certified installation companies..."
+      - action: findInstallers
+        params:
+          location: "{{shippingAddress}}"
+          chargepointModel: "{{chargepointModel}}"
+          quantity: "{{quantity}}"
+          certificationRequired: true
+      - action: log
+        params:
+          message: "   Found {{installerCount}} available installers"
+      - action: rankInstallers
+        params:
+          criteria: ["rating", "availability", "price", "certifications"]
+    transitions:
+      - event: INSTALLER_SELECTED
+        to: installer_confirmed
+        description: Installation company selected
+      - event: NO_INSTALLERS_AVAILABLE
+        to: onboarding_failed
+        description: No installers available in area
+
+  installer_confirmed:
+    name: installer_confirmed
+    description: Installation company confirmed and notified
+    onEntry:
+      - action: log
+        params:
+          message: "✅ Installer selected: {{selectedInstaller.companyName}}"
+      - action: log
+        params:
+          message: "   Rating: {{selectedInstaller.rating}}/5.0"
+      - action: log
+        params:
+          message: "   Certifications: {{selectedInstaller.certifications}}"
+      - action: updateContext
+        params:
+          installerCompanyId: "{{selectedInstaller.companyId}}"
+          installerCompanyName: "{{selectedInstaller.companyName}}"
+      - action: notifyInstaller
+        params:
+          companyId: "{{selectedInstaller.companyId}}"
+          orderId: "{{orderId}}"
+          type: "new_installation_request"
+      - action: sendNotification
+        params:
+          recipient: "{{customerId}}"
+          type: "installer_assigned"
+          data:
+            installerName: "{{selectedInstaller.companyName}}"
+            installerRating: "{{selectedInstaller.rating}}"
+    transitions:
+      - event: START_INSTALLATION
+        to: installation_pending
+
+  # ==========================================================================
+  # 3. INSTALLATION SUB-FLOW
+  # ==========================================================================
+  installation_pending:
+    name: installation_pending
+    description: Ready to start installation sub-flow
+    onEntry:
+      - action: log
+        params:
+          message: "⏳ Preparing to start installation sub-flow..."
+      - action: updateContext
+        params:
+          installationContext:
+            installationId: "INST-{{orderId}}"
+            orderId: "{{orderId}}"
+            customerId: "{{customerId}}"
+            address: "{{shippingAddress}}"
+            chargepointModel: "{{chargepointModel}}"
+            quantity: "{{quantity}}"
+            installerCompanyId: "{{installerCompanyId}}"
+    transitions:
+      - event: BEGIN_INSTALLATION
+        to: installing
+
+  installing:
+    name: installing
+    description: Installation sub-flow is executing
+    onEntry:
+      - action: log
+        params:
+          message: "🔧 Installation sub-flow in progress..."
+      - action: startSubFlow
+        params:
+          flowDefinition: "chargepoint-installation"
+          context: "{{installationContext}}"
+          inheritContext: true
+      - action: updateContext
+        params:
+          installationFlowId: "{{subFlowId}}"
+          installationStatus: "in_progress"
+    # Monitor sub-flow completion
+    onSubFlowComplete:
+      - action: log
+        params:
+          message: "✅ Installation sub-flow completed"
+      - action: updateContext
+        params:
+          installationStatus: "completed"
+          installationResult: "{{subFlowResult}}"
+      - action: autoTransition
+        event: INSTALLATION_COMPLETE
+    # Monitor sub-flow failure  
+    onSubFlowFailed:
+      - action: log
+        params:
+          message: "❌ Installation sub-flow failed"
+      - action: updateContext
+        params:
+          installationStatus: "failed"
+          installationError: "{{subFlowError}}"
+      - action: autoTransition
+        event: INSTALLATION_FAILED
+    transitions:
+      - event: INSTALLATION_COMPLETE
+        to: onboarding_complete
+        description: Installation completed successfully
+      - event: INSTALLATION_FAILED
+        to: handling_installation_failure
+        description: Installation failed, handle gracefully
+
+  # ==========================================================================
+  # 4. ALTERNATIVE PATH: NO INSTALLATION REQUIRED
+  # ==========================================================================
+  processing_delivery:
+    name: processing_delivery
+    description: Process delivery for orders without installation
+    onEntry:
+      - action: log
+        params:
+          message: "📦 Processing delivery (no installation required)..."
+      - action: scheduleDelivery
+        params:
+          orderId: "{{orderId}}"
+          address: "{{shippingAddress}}"
+          items:
+            - model: "{{chargepointModel}}"
+              quantity: "{{quantity}}"
+      - action: sendNotification
+        params:
+          recipient: "{{customerId}}"
+          type: "delivery_scheduled"
+          data:
+            trackingNumber: "{{trackingNumber}}"
+            estimatedDelivery: "{{deliveryDate}}"
+    transitions:
+      - event: DELIVERED
+        to: onboarding_complete
+
+  # ==========================================================================
+  # 5. ERROR HANDLING
+  # ==========================================================================
+  handling_installation_failure:
+    name: handling_installation_failure
+    description: Handle installation failure gracefully
+    onEntry:
+      - action: log
+        params:
+          message: "⚠️  Handling installation failure..."
+      - action: log
+        params:
+          message: "   Error: {{installationError}}"
+      - action: notifyCustomerService
+        params:
+          orderId: "{{orderId}}"
+          issue: "installation_failed"
+          details: "{{installationError}}"
+      - action: sendNotification
+        params:
+          recipient: "{{customerId}}"
+          type: "installation_issue"
+          data:
+            orderId: "{{orderId}}"
+            message: "We encountered an issue with your installation. Our team will contact you shortly."
+    transitions:
+      - event: RETRY_INSTALLATION
+        to: selecting_installer
+        description: Try with different installer
+      - event: CANCEL_ORDER
+        to: onboarding_failed
+        description: Customer chooses to cancel
+
+  # ==========================================================================
+  # 6. TERMINAL STATES
+  # ==========================================================================
+  onboarding_complete:
+    name: onboarding_complete
+    description: Onboarding process completed successfully
+    type: final
+    onEntry:
+      - action: log
+        params:
+          message: "✅ ========================================"
+      - action: log
+        params:
+          message: "   ONBOARDING COMPLETED SUCCESSFULLY!"
+      - action: log
+        params:
+          message: "========================================"
+      - action: log
+        params:
+          message: "   Order ID: {{orderId}}"
+      - action: log
+        params:
+          message: "   Customer: {{customerId}}"
+      - action: log
+        params:
+          message: "   Status: {{installationStatus}}"
+      - action: updateOrderStatus
+        params:
+          orderId: "{{orderId}}"
+          status: "completed"
+          completedDate: "{{currentDate}}"
+      - action: sendNotification
+        params:
+          recipient: "{{customerId}}"
+          type: "onboarding_complete"
+          data:
+            orderId: "{{orderId}}"
+            nextSteps: "Your chargepoint is ready to use. Check your email for warranty registration."
+      - action: triggerFollowUp
+        params:
+          customerId: "{{customerId}}"
+          type: "customer_satisfaction_survey"
+          delayDays: 7
+
+  onboarding_failed:
+    name: onboarding_failed
+    description: Onboarding process failed
+    type: final
+    onEntry:
+      - action: log
+        params:
+          message: "❌ Onboarding failed"
+      - action: log
+        params:
+          message: "   Order ID: {{orderId}}"
+      - action: log
+        params:
+          message: "   Reason: {{failureReason}}"
+      - action: updateOrderStatus
+        params:
+          orderId: "{{orderId}}"
+          status: "failed"
+          failedDate: "{{currentDate}}"
+          reason: "{{failureReason}}"
+      - action: sendNotification
+        params:
+          recipient: "{{customerId}}"
+          type: "onboarding_failed"
+          data:
+            orderId: "{{orderId}}"
+            reason: "{{failureReason}}"
+            refundStatus: "Processing"
+      - action: initiateRefund
+        params:
+          orderId: "{{orderId}}"
+          amount: "{{totalPrice}}"
+          reason: "{{failureReason}}"
+
+# ============================================================================
+# CONTEXT VALIDATION
+# ============================================================================
+validation:
+  - field: orderId
+    type: string
+    required: true
+    pattern: "^ORD-\\d{4}-\\d{3}$"
+    description: "Order ID in format ORD-YYYY-NNN"
+  
+  - field: customerId
+    type: string
+    required: true
+    description: "Customer identifier"
+  
+  - field: chargepointModel
+    type: string
+    required: true
+    enum: ["FastCharge-Pro-22kW", "StandardCharge-7kW", "UltraFast-50kW"]
+    description: "Chargepoint model"
+  
+  - field: quantity
+    type: number
+    required: true
+    minimum: 1
+    maximum: 10
+    description: "Number of chargepoints"
+  
+  - field: totalPrice
+    type: number
+    required: true
+    minimum: 0
+    description: "Total order price in euros"
+  
+  - field: installationRequired
+    type: boolean
+    required: true
+    description: "Whether installation service is required"
+  
+  - field: shippingAddress
+    type: object
+    required: true
+    properties:
+      street: { type: string, required: true }
+      city: { type: string, required: true }
+      postalCode: { type: string, required: true }
+      country: { type: string, required: true }
+
+# ============================================================================
+# SUB-FLOW DEFINITIONS
+# ============================================================================
+subFlows:
+  - id: chargepoint-installation
+    path: "./chargepoint-installation.yaml"
+    description: "Complete installation process including assessment, permits, installation, and commissioning"
+    contextMapping:
+      # Map parent context to sub-flow context
+      orderId: "orderId"
+      customerId: "customerId"
+      chargepointModel: "chargepointModel"
+      quantity: "quantity"
+      installerCompanyId: "installerCompanyId"
+      shippingAddress: "address"
+
+# ============================================================================
+# METADATA
+# ============================================================================
+metadata:
+  author: "tsFlow Team"
+  category: "Onboarding"
+  tags: ["chargepoint", "ev", "onboarding", "subflow", "order"]
+  estimatedDuration: "1-2 days"
+  
+  # Integration points
+  integrations:
+    - name: "inventory_system"
+      description: "Check product availability"
+    - name: "payment_gateway"
+      description: "Process payments and refunds"
+    - name: "notification_service"
+      description: "Send emails and SMS to customers"
+    - name: "installer_network"
+      description: "Find and coordinate with installers"

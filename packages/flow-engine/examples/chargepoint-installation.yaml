@@ -1,0 +1,778 @@
+# ============================================================================
+# CHARGEPOINT INSTALLATION FLOW
+# ============================================================================
+# 
+# This comprehensive installation flow demonstrates:
+# - Sub-flow composition (installation as part of onboarding)
+# - Saga pattern for rollback (cancellations, refunds)
+# - Parallel state execution (site survey + electrical assessment)
+# - Context validation
+# - Real-world error handling
+# - Multi-stage approval workflows
+#
+# Context Schema:
+# - installationId: string
+# - orderId: string
+# - customerId: string
+# - address: { street, city, postalCode, country }
+# - chargepointModel: string
+# - quantity: number
+# - installerCompanyId: string
+# - siteSurvey: { completed, surveyDate, parkingSpacesSuitable, etc. }
+# - electricalAssessment: { panelCapacity, availableCapacity, etc. }
+# - schedule: { proposedDate, estimatedDuration, crewSize }
+# - permits: { required, submitted, approved, permitNumber }
+# - installation: { startTime, status, chargepointsInstalled }
+# - commissioning: { allTestsPassed, certificationNumber }
+# - payment: { depositPaid, depositAmount, finalPaymentPaid }
+# - customerApproval: { quoteApproved, finalInspectionApproved }
+# ============================================================================
+
+id: chargepoint-installation
+version: "1.0.0"
+description: Complete chargepoint installation workflow from site assessment to commissioning
+
+# Initial state when the installation flow starts
+initial: installation_initiated
+
+# ============================================================================
+# STATE DEFINITIONS
+# ============================================================================
+states:
+  # ==========================================================================
+  # 1. INITIATION
+  # ==========================================================================
+  installation_initiated:
+    name: installation_initiated
+    description: Installation process has been initiated
+    onEntry:
+      - action: log
+        params:
+          message: "🚀 Installation {{installationId}} initiated for customer {{customerId}}"
+      - action: log
+        params:
+          message: "   Model: {{chargepointModel}} ({{quantity}}x)"
+      - action: log
+        params:
+          message: "   Installer: {{installerCompanyId}}"
+    transitions:
+      - event: START_ASSESSMENT
+        to: site_assessment
+        description: Begin parallel site assessments
+
+  # ==========================================================================
+  # 2. PARALLEL SITE ASSESSMENT
+  # ==========================================================================
+  # Site Survey and Electrical Assessment happen simultaneously
+  site_assessment:
+    name: site_assessment
+    description: Parallel execution of site survey and electrical assessment
+    type: parallel
+    onEntry:
+      - action: log
+        params:
+          message: "📋 Starting parallel site assessments..."
+    regions:
+      # Region 1: Site Survey
+      - name: site_survey_region
+        description: Physical site inspection and parking space assessment
+        initialState: survey_scheduling
+        
+      # Region 2: Electrical Assessment
+      - name: electrical_region
+        description: Electrical panel capacity and wiring assessment
+        initialState: electrical_scheduling
+    transitions:
+      - event: ASSESSMENTS_COMPLETE
+        to: reviewing_assessment
+        description: Both assessments completed
+
+  # Site Survey Region States
+  survey_scheduling:
+    name: survey_scheduling
+    description: Scheduling the site survey appointment
+    onEntry:
+      - action: log
+        params:
+          message: "   📅 Scheduling site survey..."
+      - action: updateContext
+        params:
+          siteSurvey.scheduled: true
+    transitions:
+      - event: SURVEY_SCHEDULED
+        to: conducting_survey
+
+  conducting_survey:
+    name: conducting_survey
+    description: On-site survey in progress
+    onEntry:
+      - action: log
+        params:
+          message: "   🚗 Conducting site survey..."
+      - action: updateContext
+        params:
+          siteSurvey.completed: true
+          siteSurvey.surveyDate: "{{currentDate}}"
+          siteSurvey.surveyorId: "SURV-001"
+          siteSurvey.parkingSpacesSuitable: true
+          siteSurvey.distanceToPanel: 15
+          siteSurvey.groundType: "asphalt"
+          siteSurvey.weatherConditions: "clear"
+          siteSurvey.notes: "Site is suitable for installation. Easy access to electrical panel."
+    transitions:
+      - event: SURVEY_COMPLETE
+        to: survey_done
+
+  survey_done:
+    name: survey_done
+    description: Site survey completed successfully
+    type: final
+    onEntry:
+      - action: log
+        params:
+          message: "   ✅ Site survey completed"
+
+  # Electrical Assessment Region States
+  electrical_scheduling:
+    name: electrical_scheduling
+    description: Scheduling the electrical assessment
+    onEntry:
+      - action: log
+        params:
+          message: "   ⚡ Scheduling electrical assessment..."
+      - action: updateContext
+        params:
+          electricalAssessment.scheduled: true
+    transitions:
+      - event: ELECTRICAL_SCHEDULED
+        to: conducting_electrical
+
+  conducting_electrical:
+    name: conducting_electrical
+    description: Electrical system assessment in progress
+    onEntry:
+      - action: log
+        params:
+          message: "   🔌 Conducting electrical assessment..."
+      - action: updateContext
+        params:
+          electricalAssessment.completed: true
+          electricalAssessment.assessmentDate: "{{currentDate}}"
+          electricalAssessment.electricianId: "ELEC-001"
+          electricalAssessment.panelCapacity: 200
+          electricalAssessment.availableCapacity: 80
+          electricalAssessment.upgradeSuggested: false
+          electricalAssessment.wiringType: "copper"
+          electricalAssessment.breakerSize: 40
+          electricalAssessment.notes: "Sufficient capacity available. No upgrades needed."
+    transitions:
+      - event: ELECTRICAL_COMPLETE
+        to: electrical_done
+
+  electrical_done:
+    name: electrical_done
+    description: Electrical assessment completed successfully
+    type: final
+    onEntry:
+      - action: log
+        params:
+          message: "   ✅ Electrical assessment completed"
+
+  # ==========================================================================
+  # 3. ASSESSMENT REVIEW
+  # ==========================================================================
+  reviewing_assessment:
+    name: reviewing_assessment
+    description: Review both assessment results and determine feasibility
+    onEntry:
+      - action: log
+        params:
+          message: "📊 Reviewing assessment results..."
+      - action: validate
+        params:
+          field: siteSurvey.parkingSpacesSuitable
+          condition: equals
+          value: true
+          errorMessage: "Site not suitable for installation"
+    transitions:
+      - event: GENERATE_QUOTE
+        to: generating_quote
+        description: Assessments approved, proceed to quote
+
+  # ==========================================================================
+  # 4. QUOTE GENERATION & APPROVAL
+  # ==========================================================================
+  generating_quote:
+    name: generating_quote
+    description: Calculate costs and generate installation quote
+    onEntry:
+      - action: log
+        params:
+          message: "💰 Generating installation quote..."
+      - action: calculateCost
+        params:
+          basePrice: 1500
+          multiplier: "{{quantity}}"
+          electricalWork: "{{electricalAssessment.upgradeCost}}"
+          resultField: totalCost
+      - action: updateContext
+        params:
+          payment.depositAmount: "{{totalCost * 0.3}}"
+          payment.finalAmount: "{{totalCost * 0.7}}"
+          payment.depositPaid: false
+          payment.finalPaymentPaid: false
+      - action: log
+        params:
+          message: "   Total cost: €{{totalCost}}"
+      - action: log
+        params:
+          message: "   Deposit required (30%): €{{payment.depositAmount}}"
+    transitions:
+      - event: SEND_QUOTE
+        to: awaiting_customer_approval
+
+  awaiting_customer_approval:
+    name: awaiting_customer_approval
+    description: Waiting for customer to approve or reject the quote
+    onEntry:
+      - action: log
+        params:
+          message: "📧 Quote sent to customer, awaiting approval..."
+      - action: sendNotification
+        params:
+          recipient: "{{customerId}}"
+          type: "quote_approval"
+          data:
+            depositAmount: "{{payment.depositAmount}}"
+            finalAmount: "{{payment.finalAmount}}"
+    transitions:
+      - event: CUSTOMER_APPROVED
+        to: collecting_deposit
+        description: Customer approved the quote
+      - event: CUSTOMER_REJECTED
+        to: installation_cancelled
+        description: Customer rejected the quote
+
+  # ==========================================================================
+  # 5. PAYMENT & PERMITTING (Saga Pattern - Compensatable Actions)
+  # ==========================================================================
+  collecting_deposit:
+    name: collecting_deposit
+    description: Process deposit payment from customer
+    onEntry:
+      - action: log
+        params:
+          message: "💳 Collecting deposit payment..."
+      - action: processPayment
+        params:
+          customerId: "{{customerId}}"
+          amount: "{{payment.depositAmount}}"
+          type: "deposit"
+      - action: updateContext
+        params:
+          payment.depositPaid: true
+          payment.depositTransactionId: "{{transactionId}}"
+      - action: log
+        params:
+          message: "   ✅ Deposit of €{{payment.depositAmount}} received"
+    # Compensation: Refund deposit if installation is cancelled
+    compensation:
+      action: refundPayment
+      params:
+        transactionId: "{{payment.depositTransactionId}}"
+        amount: "{{payment.depositAmount}}"
+      description: "Refund deposit payment"
+    transitions:
+      - event: DEPOSIT_RECEIVED
+        to: applying_for_permits
+
+  applying_for_permits:
+    name: applying_for_permits
+    description: Submit permit applications to local authorities
+    onEntry:
+      - action: log
+        params:
+          message: "📝 Applying for installation permits..."
+      - action: submitPermitApplication
+        params:
+          address: "{{address}}"
+          installationType: "EV Chargepoint"
+          quantity: "{{quantity}}"
+          electricalLoad: "{{chargepointModel}}"
+      - action: updateContext
+        params:
+          permits.required: true
+          permits.submitted: true
+          permits.approved: false
+          permits.submissionDate: "{{currentDate}}"
+    # Compensation: Cancel permit application
+    compensation:
+      action: cancelPermitApplication
+      params:
+        applicationId: "{{permits.applicationId}}"
+      description: "Cancel permit application"
+    transitions:
+      - event: PERMITS_SUBMITTED
+        to: awaiting_permit_approval
+
+  awaiting_permit_approval:
+    name: awaiting_permit_approval
+    description: Waiting for permit approval from authorities
+    onEntry:
+      - action: log
+        params:
+          message: "   ⏳ Waiting for permit approval..."
+      - action: checkPermitStatus
+        params:
+          applicationId: "{{permits.applicationId}}"
+    transitions:
+      - event: PERMITS_APPROVED
+        to: scheduling_installation
+        description: Permits approved by authorities
+      - event: PERMITS_DENIED
+        to: installation_cancelled
+        description: Permits denied, cannot proceed
+
+  scheduling_installation:
+    name: scheduling_installation
+    description: Schedule installation appointment with crew and customer
+    onEntry:
+      - action: log
+        params:
+          message: "📅 Scheduling installation appointment..."
+      - action: findAvailableSlot
+        params:
+          installerCompanyId: "{{installerCompanyId}}"
+          estimatedDuration: 4
+          daysAhead: 7
+      - action: updateContext
+        params:
+          schedule.proposedDate: "{{availableDate}}"
+          schedule.estimatedDuration: 4
+          schedule.crewSize: 2
+          schedule.equipmentNeeded: ["drill", "conduit", "mounting_bracket", "test_equipment"]
+          permits.approved: true
+          permits.permitNumber: "PERMIT-{{timestamp}}"
+          permits.expiryDate: "{{permitExpiryDate}}"
+      - action: log
+        params:
+          message: "   📆 Installation scheduled for {{schedule.proposedDate}}"
+      - action: sendNotification
+        params:
+          recipient: "{{customerId}}"
+          type: "installation_scheduled"
+          data:
+            date: "{{schedule.proposedDate}}"
+            duration: "{{schedule.estimatedDuration}}"
+    # Compensation: Cancel installation appointment
+    compensation:
+      action: cancelAppointment
+      params:
+        scheduleId: "{{schedule.appointmentId}}"
+        installerCompanyId: "{{installerCompanyId}}"
+      description: "Cancel installation appointment"
+    transitions:
+      - event: SCHEDULE_CONFIRMED
+        to: installation_scheduled
+
+  installation_scheduled:
+    name: installation_scheduled
+    description: Installation is scheduled and confirmed
+    onEntry:
+      - action: log
+        params:
+          message: "   ✅ Installation scheduled and confirmed"
+      - action: updateContext
+        params:
+          schedule.confirmed: true
+    transitions:
+      - event: BEGIN_INSTALLATION
+        to: installing_chargepoint
+        description: Installation day arrived, begin work
+
+  # ==========================================================================
+  # 6. INSTALLATION EXECUTION
+  # ==========================================================================
+  installing_chargepoint:
+    name: installing_chargepoint
+    description: Physical installation of chargepoint on-site
+    onEntry:
+      - action: log
+        params:
+          message: "🔧 Installation crew on-site..."
+      - action: log
+        params:
+          message: "   - Mounting chargepoint"
+      - action: log
+        params:
+          message: "   - Running electrical conduit"
+      - action: log
+        params:
+          message: "   - Connecting to electrical panel"
+      - action: log
+        params:
+          message: "   - Installing breaker and safety equipment"
+      - action: updateContext
+        params:
+          installation.startTime: "{{currentTimestamp}}"
+          installation.crewLeadId: "CREW-001"
+          installation.status: "in_progress"
+          installation.chargepointsInstalled: 0
+      - action: performInstallation
+        params:
+          chargepointModel: "{{chargepointModel}}"
+          quantity: "{{quantity}}"
+          electricalSpecs: "{{electricalAssessment}}"
+      - action: updateContext
+        params:
+          installation.status: "completed"
+          installation.endTime: "{{currentTimestamp}}"
+          installation.chargepointsInstalled: "{{quantity}}"
+          installation.photos: ["install1.jpg", "install2.jpg", "install3.jpg"]
+      - action: log
+        params:
+          message: "   ✅ {{quantity}} chargepoint(s) installed successfully"
+    transitions:
+      - event: INSTALLATION_COMPLETE
+        to: testing_and_commissioning
+
+  # ==========================================================================
+  # 7. TESTING & COMMISSIONING
+  # ==========================================================================
+  testing_and_commissioning:
+    name: testing_and_commissioning
+    description: Comprehensive testing and system commissioning
+    onEntry:
+      - action: log
+        params:
+          message: "🧪 Testing and commissioning..."
+      - action: log
+        params:
+          message: "   - Running power tests"
+      - action: log
+        params:
+          message: "   - Testing connectivity"
+      - action: log
+        params:
+          message: "   - Performing safety checks"
+      - action: log
+        params:
+          message: "   - Load testing"
+      - action: runTests
+        params:
+          tests: ["power", "connectivity", "safety", "load"]
+          chargepointIds: "{{installation.chargepointIds}}"
+      - action: updateContext
+        params:
+          commissioning.testDate: "{{currentDate}}"
+          commissioning.technicianId: "TECH-001"
+          commissioning.powerTest: true
+          commissioning.connectivityTest: true
+          commissioning.safetyTest: true
+          commissioning.loadTest: true
+          commissioning.allTestsPassed: true
+          commissioning.certificationNumber: "CERT-{{timestamp}}"
+      - action: log
+        params:
+          message: "   ✅ All tests passed - Certificate: {{commissioning.certificationNumber}}"
+    transitions:
+      - event: TESTS_PASSED
+        to: customer_walkthrough
+        description: All tests successful
+      - event: TESTS_FAILED
+        to: troubleshooting
+        description: Some tests failed, needs troubleshooting
+
+  troubleshooting:
+    name: troubleshooting
+    description: Diagnose and fix test failures
+    onEntry:
+      - action: log
+        params:
+          message: "🔍 Troubleshooting test failures..."
+      - action: diagnoseProblem
+        params:
+          failedTests: "{{commissioning.failedTests}}"
+    transitions:
+      - event: ISSUE_RESOLVED
+        to: testing_and_commissioning
+        description: Issue fixed, retry tests
+      - event: CANNOT_RESOLVE
+        to: installation_failed
+        description: Cannot fix issue, installation failed
+
+  # ==========================================================================
+  # 8. CUSTOMER ACCEPTANCE & FINAL PAYMENT
+  # ==========================================================================
+  customer_walkthrough:
+    name: customer_walkthrough
+    description: Demonstrate system to customer and provide training
+    onEntry:
+      - action: log
+        params:
+          message: "👥 Customer walkthrough and training..."
+      - action: log
+        params:
+          message: "   - Demonstrating chargepoint operation"
+      - action: log
+        params:
+          message: "   - Explaining safety features"
+      - action: log
+        params:
+          message: "   - Providing user manual"
+      - action: log
+        params:
+          message: "   - Answering questions"
+      - action: conductWalkthrough
+        params:
+          customerId: "{{customerId}}"
+          chargepointIds: "{{installation.chargepointIds}}"
+    transitions:
+      - event: CUSTOMER_ACCEPTS
+        to: collecting_final_payment
+        description: Customer satisfied with installation
+      - event: CUSTOMER_REJECTS
+        to: addressing_concerns
+        description: Customer has concerns
+
+  addressing_concerns:
+    name: addressing_concerns
+    description: Address customer concerns and make adjustments
+    onEntry:
+      - action: log
+        params:
+          message: "🔧 Addressing customer concerns..."
+      - action: recordConcerns
+        params:
+          customerId: "{{customerId}}"
+          concerns: "{{customerConcerns}}"
+    transitions:
+      - event: CONCERNS_RESOLVED
+        to: customer_walkthrough
+        description: Retry walkthrough after fixes
+
+  collecting_final_payment:
+    name: collecting_final_payment
+    description: Process final payment from customer
+    onEntry:
+      - action: log
+        params:
+          message: "💳 Collecting final payment..."
+      - action: processPayment
+        params:
+          customerId: "{{customerId}}"
+          amount: "{{payment.finalAmount}}"
+          type: "final"
+      - action: updateContext
+        params:
+          payment.finalPaymentPaid: true
+          payment.finalTransactionId: "{{transactionId}}"
+      - action: log
+        params:
+          message: "   ✅ Final payment of €{{payment.finalAmount}} received"
+    transitions:
+      - event: PAYMENT_COMPLETE
+        to: completing_installation
+
+  # ==========================================================================
+  # 9. COMPLETION & DOCUMENTATION
+  # ==========================================================================
+  completing_installation:
+    name: completing_installation
+    description: Finalize documentation and wrap up installation
+    onEntry:
+      - action: log
+        params:
+          message: "📋 Finalizing installation documentation..."
+      - action: log
+        params:
+          message: "   - Generating completion certificate"
+      - action: log
+        params:
+          message: "   - Updating warranty registration"
+      - action: log
+        params:
+          message: "   - Sending documents to customer"
+      - action: log
+        params:
+          message: "   - Scheduling follow-up check"
+      - action: generateDocumentation
+        params:
+          installationId: "{{installationId}}"
+          certificationNumber: "{{commissioning.certificationNumber}}"
+          customerId: "{{customerId}}"
+      - action: updateContext
+        params:
+          customerApproval.quoteApproved: true
+          customerApproval.dateApproved: "{{currentDate}}"
+          customerApproval.schedulingApproved: true
+          customerApproval.finalInspectionApproved: true
+          customerApproval.signature: "customer_signature.png"
+      - action: scheduleFollowUp
+        params:
+          customerId: "{{customerId}}"
+          daysAhead: 30
+          type: "post_installation_check"
+    transitions:
+      - event: DOCUMENTATION_COMPLETE
+        to: installation_complete
+
+  installation_complete:
+    name: installation_complete
+    description: Installation successfully completed
+    type: final
+    onEntry:
+      - action: log
+        params:
+          message: "✅ ========================================"
+      - action: log
+        params:
+          message: "   INSTALLATION COMPLETED SUCCESSFULLY!"
+      - action: log
+        params:
+          message: "========================================"
+      - action: log
+        params:
+          message: "   Installation ID: {{installationId}}"
+      - action: log
+        params:
+          message: "   Chargepoints: {{installation.chargepointsInstalled}}"
+      - action: log
+        params:
+          message: "   Certificate: {{commissioning.certificationNumber}}"
+      - action: log
+        params:
+          message: "   All payments received"
+      - action: log
+        params:
+          message: "   Documentation delivered"
+      - action: sendNotification
+        params:
+          recipient: "{{customerId}}"
+          type: "installation_complete"
+          data:
+            installationId: "{{installationId}}"
+            certificationNumber: "{{commissioning.certificationNumber}}"
+
+  # ==========================================================================
+  # 10. FAILURE & CANCELLATION STATES
+  # ==========================================================================
+  installation_cancelled:
+    name: installation_cancelled
+    description: Installation was cancelled (compensations will run)
+    type: final
+    onEntry:
+      - action: log
+        params:
+          message: "❌ Installation cancelled"
+      - action: log
+        params:
+          message: "   Triggering compensations (refunds, cancellations)..."
+      - action: updateContext
+        params:
+          status: "cancelled"
+          cancelledDate: "{{currentDate}}"
+      - action: sendNotification
+        params:
+          recipient: "{{customerId}}"
+          type: "installation_cancelled"
+
+  installation_failed:
+    name: installation_failed
+    description: Installation failed due to unrecoverable error
+    type: final
+    onEntry:
+      - action: log
+        params:
+          message: "❌ Installation failed"
+      - action: log
+        params:
+          message: "   Compensations will be triggered..."
+      - action: updateContext
+        params:
+          status: "failed"
+          failedDate: "{{currentDate}}"
+          failureReason: "{{error.message}}"
+      - action: sendNotification
+        params:
+          recipient: "{{customerId}}"
+          type: "installation_failed"
+          data:
+            reason: "{{error.message}}"
+
+# ============================================================================
+# CONTEXT VALIDATION RULES
+# ============================================================================
+validation:
+  - field: installationId
+    type: string
+    required: true
+    description: Unique installation identifier
+  
+  - field: orderId
+    type: string
+    required: true
+    description: Reference to the original order
+  
+  - field: customerId
+    type: string
+    required: true
+    description: Customer identifier
+  
+  - field: chargepointModel
+    type: string
+    required: true
+    description: Model of chargepoint to install
+  
+  - field: quantity
+    type: number
+    required: true
+    minimum: 1
+    description: Number of chargepoints to install
+  
+  - field: installerCompanyId
+    type: string
+    required: true
+    description: Selected installation company
+  
+  - field: address
+    type: object
+    required: true
+    properties:
+      street: { type: string, required: true }
+      city: { type: string, required: true }
+      postalCode: { type: string, required: true }
+      country: { type: string, required: true }
+
+# ============================================================================
+# SAGA COMPENSATION CONFIGURATION
+# ============================================================================
+# Compensations are automatically triggered in reverse order when:
+# - A state throws an error
+# - Flow transitions to installation_cancelled or installation_failed
+# - Each compensatable state defines its compensation action
+# ============================================================================
+
+# ============================================================================
+# METADATA
+# ============================================================================
+metadata:
+  author: "tsFlow Team"
+  category: "Installation"
+  tags: ["chargepoint", "ev", "installation", "saga", "parallel"]
+  estimatedDuration: "4-6 hours"
+  requiredRoles: ["surveyor", "electrician", "installer", "tester"]
+  
+  # Metrics to track
+  metrics:
+    - name: "installation_duration"
+      description: "Time from initiated to complete"
+      unit: "hours"
+    
+    - name: "customer_satisfaction"
+      description: "Customer approval rating"
+      unit: "score"
+    
+    - name: "test_pass_rate"
+      description: "Percentage of tests passed on first attempt"
+      unit: "percentage"

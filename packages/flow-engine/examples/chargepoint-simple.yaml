@@ -1,0 +1,99 @@
+# Simplified Chargepoint Installation Flow
+# Compatible with the YamlFlowParser format
+
+id: chargepoint-installation-simple
+initial: initiated
+
+states:
+  # 1. Initiation
+  initiated:
+    entry: "console.log('🚀 Installation initiated')"
+    on:
+      start_assessment: assessing
+
+  # 2. Assessment
+  assessing:
+    entry: "console.log('📋 Conducting site assessment...'); context.siteSurvey = { completed: true, parkingSpacesSuitable: true }; context.electricalAssessment = { completed: true, panelCapacity: 200, availableCapacity: 80 }"
+    on:
+      assessment_done: quote_generated
+
+  # 3. Quote & Approval
+  quote_generated:
+    entry: "console.log('💰 Quote generated'); context.payment = { depositAmount: 900, finalAmount: 2100, depositPaid: false, finalPaymentPaid: false }"
+    on:
+      customer_approved: deposit_collected
+      customer_rejected: cancelled
+
+  # 4. Payment
+  deposit_collected:
+    entry: "console.log('💳 Deposit collected'); context.payment.depositPaid = true"
+    on:
+      proceed: permits_applied
+
+  # 5. Permits
+  permits_applied:
+    entry: "console.log('📝 Permit application submitted'); context.permits = { required: true, submitted: true, approved: false }"
+    on:
+      permits_approved: scheduled
+      permits_denied: cancelled
+
+  # 6. Scheduling
+  scheduled:
+    entry: "console.log('📅 Installation scheduled'); context.permits.approved = true; context.schedule = { proposedDate: new Date(), estimatedDuration: 4, crewSize: 2 }"
+    on:
+      begin_installation: installing
+
+  # 7. Installation
+  installing:
+    entry: "console.log('🔧 Installing chargepoint...'); context.installation = { status: 'in_progress', chargepointsInstalled: 0 }; context.installation.status = 'completed'; context.installation.chargepointsInstalled = context.quantity"
+    on:
+      installation_done: testing
+
+  # 8. Testing
+  testing:
+    entry: "console.log('🧪 Testing and commissioning...'); context.commissioning = { allTestsPassed: false, powerTest: true, connectivityTest: true, safetyTest: true }"
+    on:
+      tests_passed: walkthrough
+      tests_failed: troubleshooting
+
+  troubleshooting:
+    entry: "console.log('🔍 Troubleshooting issues...')"
+    on:
+      issue_resolved: testing
+      cannot_fix: failed
+
+  # 9. Customer Acceptance
+  walkthrough:
+    entry: "console.log('👥 Customer walkthrough'); context.commissioning.allTestsPassed = true; context.commissioning.certificationNumber = 'CERT-' + Date.now()"
+    on:
+      customer_accepts: final_payment
+      customer_rejects: addressing_concerns
+
+  addressing_concerns:
+    entry: "console.log('🔧 Addressing concerns...')"
+    on:
+      concerns_resolved: walkthrough
+
+  final_payment:
+    entry: "console.log('💳 Collecting final payment'); context.payment.finalPaymentPaid = true"
+    on:
+      payment_received: completing
+
+  # 10. Completion
+  completing:
+    entry: "console.log('📋 Finalizing documentation...'); context.customerApproval = { accepted: true, signedOff: true, completedAt: new Date().toISOString() }"
+    on:
+      docs_complete: completed
+
+  # Terminal states
+  completed:
+    entry: "console.log('✅ Installation completed successfully!')"
+    final: true
+
+  cancelled:
+    entry: "console.log('❌ Installation cancelled')"
+    final: true
+
+  failed:
+    entry: "console.log('❌ Installation failed')"
+    final: true

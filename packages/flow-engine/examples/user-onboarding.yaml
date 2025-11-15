@@ -1,0 +1,57 @@
+# User Onboarding Flow Example
+
+id: user-onboarding
+initial: email-verification
+
+states:
+  # Step 1: Verify email
+  email-verification:
+    entry: "context.emailSentAt = new Date().toISOString()"
+    on:
+      verify:
+        to: profile-setup
+        guard: "emailToken === context.expectedToken"
+      resend:
+        to: email-verification
+        action: "context.resendCount = (context.resendCount || 0) + 1"
+      timeout:
+        to: expired
+
+  # Step 2: Set up profile
+  profile-setup:
+    on:
+      complete:
+        to: plan-selection
+        guard: "username && username.length >= 3"
+      skip:
+        to: plan-selection
+
+  # Step 3: Choose subscription plan
+  plan-selection:
+    on:
+      select-free:
+        to: onboarding-complete
+        action: "context.plan = 'free'"
+      select-premium:
+        to: payment
+        action: "context.plan = 'premium'"
+
+  # Step 4: Process payment (if premium)
+  payment:
+    on:
+      pay:
+        to: onboarding-complete
+        action: "context.paidAt = new Date().toISOString()"
+      fail:
+        to: plan-selection
+        action: "context.paymentError = errorMessage"
+
+  # Success states
+  onboarding-complete:
+    entry: "context.completedAt = new Date().toISOString()"
+    final: true
+
+  # Failure states
+  expired:
+    entry: "context.expiredAt = new Date().toISOString()"
+    final: true

@@ -1,0 +1,61 @@
+# Order Approval Flow Example
+
+id: order-approval-flow
+initial: pending
+
+states:
+  # Initial state when order is created
+  pending:
+    entry: "context.createdAt = new Date().toISOString()"
+    on:
+      # Small orders can be auto-approved
+      approve:
+        to: approved
+        guard: "amount < 10000"
+        action: "context.approvedBy = 'auto'"
+      # Large orders need manager review
+      escalate:
+        to: manager-review
+        guard: "amount >= 10000"
+        action: "context.escalatedAt = new Date().toISOString()"
+      # Direct rejection
+      reject:
+        to: rejected
+        action: "context.rejectedBy = userId"
+
+  # Manager reviews high-value orders
+  manager-review:
+    entry: "context.reviewStarted = new Date().toISOString()"
+    on:
+      approve:
+        to: approved
+        action: "context.approvedBy = managerId"
+      reject:
+        to: rejected
+        action: "context.rejectedBy = managerId"
+
+  # Order approved, ready to ship
+  approved:
+    entry: "context.approvedAt = new Date().toISOString()"
+    on:
+      ship:
+        to: shipped
+        action: "context.shippedAt = new Date().toISOString()"
+      cancel:
+        to: cancelled
+        action: "context.cancelledBy = userId"
+
+  # Order rejected
+  rejected:
+    entry: "context.rejectedAt = new Date().toISOString()"
+    final: true
+
+  # Order cancelled
+  cancelled:
+    entry: "context.cancelledAt = new Date().toISOString()"
+    final: true
+
+  # Order shipped (final state)
+  shipped:
+    entry: "context.completedAt = new Date().toISOString()"
+    final: true
