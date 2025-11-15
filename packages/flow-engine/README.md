@@ -54,11 +54,11 @@ console.log('Order approved!');
 ## Documentation
 
 Complete documentation available at:
-- [Getting Started](https://github.com/yourusername/tsFlow/blob/main/docs/getting-started.md)
-- [Advanced Patterns](https://github.com/yourusername/tsFlow/blob/main/docs/advanced-patterns.md)
-- [YAML Workflows](https://github.com/yourusername/tsFlow/blob/main/docs/yaml-workflows.md)
-- [Examples](https://github.com/yourusername/tsFlow/blob/main/docs/examples.md)
-- [API Reference](https://github.com/yourusername/tsFlow/blob/main/API_REFERENCE.md)
+- [Getting Started](https://github.com/sjefvanleeuwen/tsFlow/blob/main/docs/getting-started.md)
+- [Advanced Patterns](https://github.com/sjefvanleeuwen/tsFlow/blob/main/docs/advanced-patterns.md)
+- [YAML Workflows](https://github.com/sjefvanleeuwen/tsFlow/blob/main/docs/yaml-workflows.md)
+- [Examples](https://github.com/sjefvanleeuwen/tsFlow/blob/main/docs/examples.md)
+- [API Reference](https://github.com/sjefvanleeuwen/tsFlow/blob/main/API_REFERENCE.md)
 
 ## Use Cases
 
@@ -76,4 +76,4 @@ MIT
 
 ## Repository
 
-https://github.com/yourusername/tsFlow
+https://github.com/sjefvanleeuwen/tsFlow
