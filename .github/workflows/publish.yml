@@ -11,6 +11,9 @@ on:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
     
     steps:
       - name: Checkout code
@@ -32,6 +35,10 @@ jobs:
       - name: Run tests
         run: npm test
         
+      - name: Get package version
+        id: package-version
+        run: echo "version=$(node -p "require('./packages/flow-engine/package.json').version")" >> $GITHUB_OUTPUT
+          
       - name: Publish to NPM
         run: npm publish
         working-directory: packages/flow-engine
@@ -46,6 +53,8 @@ jobs:
           tag_name: v${{ steps.package-version.outputs.version }}
           release_name: Release v${{ steps.package-version.outputs.version }}
           body: |
-            Published @tsflow/flow-engine to NPM
+            Published tsflow-engine v${{ steps.package-version.outputs.version }} to NPM
+            
+            Install with: `npm install tsflow-engine`
           draft: false
           prerelease: false
