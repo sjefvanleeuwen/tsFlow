@@ -33,7 +33,7 @@ jobs:
         run: npm test
         
       - name: Publish to NPM
-        run: npm publish --access public
+        run: npm publish
         working-directory: packages/flow-engine
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

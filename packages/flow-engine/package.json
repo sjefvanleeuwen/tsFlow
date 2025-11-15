@@ -1,5 +1,5 @@
 {
-  "name": "@tsflow/flow-engine",
+  "name": "tsflow-engine",
   "version": "1.0.0",
   "description": "Enterprise TypeScript workflow engine with state machines, parallel execution, saga patterns, and YAML DSL",
   "type": "module",
