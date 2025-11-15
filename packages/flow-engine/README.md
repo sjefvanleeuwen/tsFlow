@@ -1,17 +1,20 @@
-# @tsflow/flow-engine
+# tsflow-engine
+
+[![CI](https://github.com/sjefvanleeuwen/tsFlow/actions/workflows/ci.yml/badge.svg)](https://github.com/sjefvanleeuwen/tsFlow/actions/workflows/ci.yml)
+[![npm version](https://badge.fury.io/js/tsflow-engine.svg)](https://badge.fury.io/js/tsflow-engine)
 
 Enterprise TypeScript workflow engine with state machines, parallel execution, saga patterns, and YAML DSL.
 
 ## Installation
 
 ```bash
-npm install @tsflow/flow-engine
+npm install tsflow-engine
 ```
 
 ## Quick Start
 
 ```typescript
-import { FlowEngine, StateMachineConfig } from '@tsflow/flow-engine';
+import { FlowEngine, StateMachineConfig } from 'tsflow-engine';
 
 const config: StateMachineConfig = {
   id: 'order-flow',

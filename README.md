@@ -1,5 +1,8 @@
 # tsFlow - Enterprise TypeScript Workflow Engine
 
+[![CI](https://github.com/sjefvanleeuwen/tsFlow/actions/workflows/ci.yml/badge.svg)](https://github.com/sjefvanleeuwen/tsFlow/actions/workflows/ci.yml)
+[![npm version](https://badge.fury.io/js/tsflow-engine.svg)](https://badge.fury.io/js/tsflow-engine)
+
 A powerful, production-ready workflow engine built with TypeScript. Features a robust state machine core with advanced enterprise capabilities including parallel execution, hierarchical states, saga patterns, middleware, retry logic, idempotency, and validation.
 
 ## ✨ Features
