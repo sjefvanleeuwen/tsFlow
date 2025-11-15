@@ -46,13 +46,13 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/yourusername/tsFlow.git",
+    "url": "https://github.com/sjefvanleeuwen/tsFlow.git",
     "directory": "packages/flow-engine"
   },
   "bugs": {
-    "url": "https://github.com/yourusername/tsFlow/issues"
+    "url": "https://github.com/sjefvanleeuwen/tsFlow/issues"
   },
-  "homepage": "https://github.com/yourusername/tsFlow#readme",
+  "homepage": "https://github.com/sjefvanleeuwen/tsFlow#readme",
   "engines": {
     "node": ">=18"
   },
