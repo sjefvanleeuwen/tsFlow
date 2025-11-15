@@ -1,6 +1,6 @@
 {
   "name": "tsflow-engine",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Enterprise TypeScript workflow engine with state machines, parallel execution, saga patterns, and YAML DSL",
   "type": "module",
   "main": "./dist/index.js",
